@@ -28,7 +28,7 @@ export default function LandingPage() {
               />
             </div>
           <div className="flex flex-col leading-tight">
-            <span className="font-display font-bold text-lg">AlumniTracer</span>
+            <span className="font-display font-bold text-lg">Alumni Tracer</span>
             <span className="text-[10px] uppercase tracking-widest opacity-70">Pamantasan ng Lungsod ng Pasig</span>
           </div>
           </div>
@@ -113,7 +113,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <GraduationCap className="h-5 w-5 text-primary" />
-            <span className="font-display font-semibold text-foreground">AlumniTracer</span>
+            <span className="font-display font-semibold text-foreground">Alumni Tracer</span>
           </div>
           <p>© 2026 University Alumni Employability Tracer System • v1.0</p>
         </div>
