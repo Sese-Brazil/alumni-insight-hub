@@ -64,7 +64,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <Label htmlFor="userId">User ID</Label>
-              <Input id="userId" placeholder="e.g. admin or 23-00240" value={userId} onChange={e => setUserId(e.target.value)} className="mt-1.5" />
+              <Input id="userId" placeholder="e.g. 23-00240" value={userId} onChange={e => setUserId(e.target.value)} className="mt-1.5" />
             </div>
             <div>
               <Label htmlFor="password">Password</Label>
@@ -97,12 +97,6 @@ export default function LoginPage() {
           </div>
           <div className="mt-4 text-center">
             <button onClick={() => navigate('/')} className="text-sm text-muted-foreground hover:text-foreground">← Back to Home</button>
-          </div>
-
-          <div className="mt-8 p-4 rounded-xl bg-muted/50 border border-border">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Demo Accounts:</p>
-            <p className="text-xs text-muted-foreground">Admin: <code className="bg-muted px-1 rounded">admin</code> / <code className="bg-muted px-1 rounded">admin123</code></p>
-            <p className="text-xs text-muted-foreground">Alumni: <code className="bg-muted px-1 rounded">23-00240</code> / <code className="bg-muted px-1 rounded">0000</code></p>
           </div>
         </motion.div>
       </div>
