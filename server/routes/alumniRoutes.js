@@ -7,6 +7,8 @@ const { authenticateToken } = require('../middleware/auth');
 // Profile routes
 router.get('/profile/:studentId', authenticateToken, alumniController.getProfile);
 router.put('/profile/:studentId', authenticateToken, alumniController.updateProfile);
+router.post('/profile/:studentId/email/request-otp', authenticateToken, alumniController.requestEmailChangeOtp);
+router.post('/profile/:studentId/email/verify-otp', authenticateToken, alumniController.verifyEmailChangeOtp);
 
 // Employment routes
 router.get('/employment/:studentId', authenticateToken, alumniController.getEmploymentHistory);

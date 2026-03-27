@@ -1,4 +1,38 @@
 const db = require('../config/db');
+const { generateOTP, sendOTPEmail } = require('../config/email');
+
+// OTPs for email change (in production, use DB/Redis)
+const emailChangeOtpStore = new Map();
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+const normalizeEmail = (email = '') => email.trim().toLowerCase();
+
+const assertSelf = (req, res, studentId) => {
+  const tokenUsername = req.user?.username;
+  const role = req.user?.role;
+
+  if (!tokenUsername) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+
+  if (role === 'admin') return true;
+
+  if (String(tokenUsername) !== String(studentId)) {
+    res.status(403).json({ error: 'Forbidden' });
+    return false;
+  }
+
+  return true;
+};
+
+// Cleanup expired OTPs occasionally
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, data] of emailChangeOtpStore.entries()) {
+    if (now > data.expiresAt) emailChangeOtpStore.delete(key);
+  }
+}, 30 * 60 * 1000);
 
 // Get alumni profile with program and college information
 const getProfile = async (req, res) => {
@@ -50,6 +84,8 @@ const updateProfile = async (req, res) => {
     const { studentId } = req.params;
     const { email, phone, address } = req.body;
 
+    if (!assertSelf(req, res, studentId)) return;
+
     // Update user table
     await db.query(
       `UPDATE user SET email = ?, phone = ?, address = ? WHERE username = ?`,
@@ -60,6 +96,129 @@ const updateProfile = async (req, res) => {
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+};
+
+// Request OTP to confirm changing email (OTP is sent to the NEW email)
+const requestEmailChangeOtp = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { newEmail } = req.body;
+
+    if (!assertSelf(req, res, studentId)) return;
+
+    if (!newEmail) {
+      return res.status(400).json({ error: 'newEmail is required' });
+    }
+
+    const normalizedNewEmail = normalizeEmail(newEmail);
+    if (!EMAIL_REGEX.test(normalizedNewEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email.' });
+    }
+
+    const [existingEmail] = await db.query(
+      `SELECT username FROM user WHERE email = ? LIMIT 1`,
+      [normalizedNewEmail]
+    );
+
+    if (existingEmail.length > 0 && String(existingEmail[0].username) !== String(studentId)) {
+      return res.status(400).json({ error: 'Email is already in use.' });
+    }
+
+    const key = `${studentId}:${normalizedNewEmail}`;
+    const now = Date.now();
+    const prev = emailChangeOtpStore.get(key);
+
+    // Basic resend throttling (30s)
+    if (prev?.lastSentAt && now - prev.lastSentAt < 30 * 1000) {
+      return res.status(429).json({ error: 'Please wait before requesting another OTP.' });
+    }
+
+    const otp = generateOTP();
+    emailChangeOtpStore.set(key, {
+      otp,
+      expiresAt: now + 10 * 60 * 1000,
+      lastSentAt: now,
+      attemptsLeft: 5
+    });
+
+    await sendOTPEmail(normalizedNewEmail, otp, {
+      subject: 'Confirm your email change (OTP)',
+      title: 'Confirm Email Change',
+      message: 'Use this One-Time Password (OTP) to confirm your new email address:',
+      expiresInMinutes: 10
+    });
+
+    return res.json({ success: true, message: 'OTP sent to new email.' });
+  } catch (error) {
+    console.error('Request email change OTP error:', error);
+    const debugMsg = process.env.NODE_ENV !== 'production' ? (error?.message || String(error)) : null;
+    return res.status(500).json({ error: debugMsg ? `Failed to send OTP. ${debugMsg}` : 'Failed to send OTP. Please try again.' });
+  }
+};
+
+// Verify OTP and apply the email change
+const verifyEmailChangeOtp = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { newEmail, otp } = req.body;
+
+    if (!assertSelf(req, res, studentId)) return;
+
+    if (!newEmail || !otp) {
+      return res.status(400).json({ error: 'newEmail and otp are required' });
+    }
+
+    const normalizedNewEmail = normalizeEmail(newEmail);
+    if (!EMAIL_REGEX.test(normalizedNewEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email.' });
+    }
+
+    const key = `${studentId}:${normalizedNewEmail}`;
+    const stored = emailChangeOtpStore.get(key);
+    if (!stored) {
+      return res.status(400).json({ error: 'OTP expired or not found. Please request a new one.' });
+    }
+
+    if (Date.now() > stored.expiresAt) {
+      emailChangeOtpStore.delete(key);
+      return res.status(400).json({ error: 'OTP expired. Please request a new one.' });
+    }
+
+    const entered = Array.isArray(otp) ? otp.join('') : String(otp).trim();
+
+    if (stored.attemptsLeft <= 0) {
+      emailChangeOtpStore.delete(key);
+      return res.status(429).json({ error: 'Too many attempts. Please request a new OTP.' });
+    }
+
+    if (stored.otp !== entered) {
+      stored.attemptsLeft -= 1;
+      emailChangeOtpStore.set(key, stored);
+      return res.status(400).json({ error: 'Invalid OTP.' });
+    }
+
+    // Ensure email not taken by others (race-safe check)
+    const [existingEmail] = await db.query(
+      `SELECT username FROM user WHERE email = ? LIMIT 1`,
+      [normalizedNewEmail]
+    );
+    if (existingEmail.length > 0 && String(existingEmail[0].username) !== String(studentId)) {
+      emailChangeOtpStore.delete(key);
+      return res.status(400).json({ error: 'Email is already in use.' });
+    }
+
+    await db.query(
+      `UPDATE user SET email = ? WHERE username = ?`,
+      [normalizedNewEmail, studentId]
+    );
+
+    emailChangeOtpStore.delete(key);
+
+    return res.json({ success: true, message: 'Email updated successfully.', email: normalizedNewEmail });
+  } catch (error) {
+    console.error('Verify email change OTP error:', error);
+    return res.status(500).json({ error: 'Failed to verify OTP' });
   }
 };
 
@@ -352,5 +511,7 @@ module.exports = {
   getCollegeSurvey,
   submitSurveyResponse,
   getSurveyResponses,
-  checkSurveyStatus
+  checkSurveyStatus,
+  requestEmailChangeOtp,
+  verifyEmailChangeOtp
 };

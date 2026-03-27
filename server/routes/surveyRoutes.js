@@ -9,6 +9,7 @@ router.get('/versions', authenticateToken, surveyController.getVersions);
 router.post('/', authenticateToken, surveyController.saveSurvey);
 router.post('/version/:version', authenticateToken, surveyController.createVersion);
 router.post('/category', authenticateToken, surveyController.addCategory);
+router.delete('/category/:id', authenticateToken, surveyController.deleteCategory);
 router.post('/question', authenticateToken, surveyController.addQuestion);
 router.put('/question/:id', authenticateToken, surveyController.updateQuestion);
 router.delete('/question/:id', authenticateToken, surveyController.deleteQuestion);

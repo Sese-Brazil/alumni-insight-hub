@@ -283,6 +283,55 @@ const addCategory = async (req, res) => {
 };
 
 // =============================
+// DELETE CATEGORY
+// =============================
+const deleteCategory = async (req, res) => {
+  const connection = await db.getConnection();
+  try {
+    const { id } = req.params;
+
+    await connection.beginTransaction();
+
+    // Delete all questions under this category first.
+    await connection.query(
+      `DELETE FROM survey_questions WHERE category_id = ?`,
+      [id]
+    );
+
+    const [result] = await connection.query(
+      `DELETE FROM survey_categories WHERE id = ?`,
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    // Reindex remaining categories to keep order clean.
+    const [remaining] = await connection.query(
+      `SELECT id FROM survey_categories ORDER BY order_index ASC, id ASC`
+    );
+
+    for (let i = 0; i < remaining.length; i += 1) {
+      await connection.query(
+        `UPDATE survey_categories SET order_index = ? WHERE id = ?`,
+        [i, remaining[i].id]
+      );
+    }
+
+    await connection.commit();
+    return res.json({ success: true, message: 'Category deleted' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Delete category error:', error);
+    return res.status(500).json({ error: 'Failed to delete category' });
+  } finally {
+    connection.release();
+  }
+};
+
+// =============================
 // ADD QUESTION (FIXED with programs)
 // =============================
 const addQuestion = async (req, res) => {
@@ -470,12 +519,18 @@ const publishSurvey = async (req, res) => {
 
     await connection.beginTransaction();
 
+    const numericCollegeId = college_id ? Number(college_id) : null;
+    if (!numericCollegeId || Number.isNaN(numericCollegeId)) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'college_id is required' });
+    }
+
     // Archive any existing active survey for this college
     const [archiveResult] = await connection.query(
       `UPDATE published_surveys
        SET status = 'archived'
        WHERE college_id = ? AND status = 'active'`,
-      [college_id]
+      [numericCollegeId]
     );
     
     console.log('Archived previous surveys:', archiveResult.affectedRows);
@@ -485,10 +540,40 @@ const publishSurvey = async (req, res) => {
       `INSERT INTO published_surveys
        (college_id, version, published_by, status)
        VALUES (?, ?, ?, 'active')`,  // Make sure status is set to 'active'
-      [college_id, version, published_by]
+      [numericCollegeId, version, published_by]
     );
 
     console.log('New survey published with ID:', result.insertId);
+
+    // Create notification for alumni in this college
+    // This powers TopBar notifications for alumni users.
+    const [notificationInsert] = await connection.query(
+      `INSERT INTO notifications
+        (title, body, type, target_role, target_college_id, target_program_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'New survey available',
+        'A new tracer survey has been published. Please complete it to help improve the alumni insights.',
+        'survey',
+        'alumni',
+        numericCollegeId,
+        null,
+        published_by
+      ]
+    );
+
+    const notificationId = notificationInsert.insertId;
+
+    // Fan-out notification to all alumni users whose program belongs to this college.
+    await connection.query(
+      `INSERT IGNORE INTO user_notifications (user_id, notification_id)
+       SELECT DISTINCT u.id, ?
+       FROM user u
+       JOIN alumni_records ar ON ar.student_id = u.username
+       JOIN programs p ON p.id = ar.program_id
+       WHERE u.role = 'alumni' AND p.college_id = ?`,
+      [notificationId, numericCollegeId]
+    );
 
     await connection.commit();
 
@@ -847,6 +932,7 @@ module.exports = {
   saveSurvey,
   createVersion,
   addCategory,
+  deleteCategory,
   addQuestion,
   updateQuestion,
   deleteQuestion,
