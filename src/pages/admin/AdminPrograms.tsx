@@ -1,22 +1,17 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Plus, Edit2, Trash2, Save, X, Loader2, 
-  Building2, GraduationCap, Users, FileText, 
-  CheckCircle2, AlertCircle, Download, Upload,
-  Search
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import {  Plus, Edit2, Trash2, Save, X, Loader2, Building2, GraduationCap, Users, FileText, CheckCircle2, AlertCircle, Download, Upload, Search } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent} from '@/components/ui/card';
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useState, useEffect } from 'react';
+import { isAdminLike } from '@/lib/roles';
 
 // API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -80,7 +75,7 @@ export default function AdminPrograms() {
   const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
 
   useEffect(() => {
-    if (!isAuthenticated || user?.role !== 'admin') {
+    if (!isAuthenticated || !isAdminLike(user?.role)) {
       navigate('/login');
     }
   }, [isAuthenticated, user, navigate]);
@@ -151,7 +146,7 @@ export default function AdminPrograms() {
   };
 
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'admin') {
+    if (isAuthenticated && isAdminLike(user?.role)) {
       fetchColleges();
       fetchPrograms();
       fetchStats();
@@ -159,7 +154,7 @@ export default function AdminPrograms() {
   }, [isAuthenticated, user]);
 
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'admin') {
+    if (isAuthenticated && isAdminLike(user?.role)) {
       fetchPrograms();
     }
   }, [collegeFilter]);

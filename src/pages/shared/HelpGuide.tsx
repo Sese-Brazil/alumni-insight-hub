@@ -1,19 +1,16 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-
-const faqs = [
-  { q: 'How often should I update my survey?', a: 'We recommend updating whenever your employment status changes.' },
-  { q: 'Can I view other alumni data?', a: 'No, individual data is confidential. Only aggregated statistics are shown.' },
-  { q: 'How are job recommendations generated?', a: 'Using machine learning models based on your skills, degree, and employment history.' },
-  { q: 'Is my data safe?', a: 'Yes, all data is handled in compliance with the Data Privacy Act.' },
-];
+import { loadContentSettings } from '@/lib/contentSettings';
 
 export default function HelpGuide() {
+  const content = loadContentSettings();
+  const faqs = content.faqs;
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div><h1 className="text-2xl font-display font-bold">Help / Guide</h1><p className="text-muted-foreground text-sm">Learn how the system works</p></div>
       <div className="glass-card p-6 space-y-4">
         <h3 className="font-display font-semibold">How the Tracer System Works</h3>
-        <p className="text-muted-foreground text-sm leading-relaxed">The system collects employment data from alumni through structured surveys. This data is analyzed using statistical models and machine learning algorithms to identify trends, predict outcomes, and generate personalized job recommendations.</p>
+        <p className="text-muted-foreground text-sm leading-relaxed">{content.help.howItWorks}</p>
       </div>
       <div className="glass-card p-6 space-y-4">
         <h3 className="font-display font-semibold">How to Complete the Tracer Survey</h3>
@@ -26,7 +23,7 @@ export default function HelpGuide() {
       </div>
       <div className="glass-card p-6 space-y-4">
         <h3 className="font-display font-semibold">Data Privacy</h3>
-        <p className="text-muted-foreground text-sm leading-relaxed">All personal data is handled in strict compliance with the Data Privacy Act. Your information is used solely for employment tracking and institutional improvement. You can request data modification or deletion at any time.</p>
+        <p className="text-muted-foreground text-sm leading-relaxed">{content.help.privacy}</p>
       </div>
       <div className="glass-card p-6">
         <h3 className="font-display font-semibold mb-4">Frequently Asked Questions</h3>

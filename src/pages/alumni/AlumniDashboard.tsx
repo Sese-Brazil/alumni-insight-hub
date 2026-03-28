@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { ClipboardCheck, Briefcase, TrendingUp, AlertTriangle, Loader2, CheckCircle2 } from 'lucide-react';
-import { KpiCard } from '@/components/KpiCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { KpiCard } from '@/components/KpiCard';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 
 // API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';

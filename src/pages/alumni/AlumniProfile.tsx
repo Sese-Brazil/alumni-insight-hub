@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, Loader2, Building2, GraduationCap } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect } from 'react';
 
 // API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -57,7 +58,13 @@ export default function AlumniProfile() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [emailOtpSending, setEmailOtpSending] = useState(false);
+  const [emailOtpVerifying, setEmailOtpVerifying] = useState(false);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [originalEmail, setOriginalEmail] = useState('');
+  const [emailOtpSentTo, setEmailOtpSentTo] = useState<string | null>(null);
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+  const [emailVerifiedFor, setEmailVerifiedFor] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileData>({
     firstName: '',
     lastName: '',
@@ -159,6 +166,12 @@ export default function AlumniProfile() {
             employmentStartDate: employmentData?.start_date || '',
             monthlyIncome: employmentData?.monthly_income || '',
           });
+
+          const loadedEmail = (data.email || '').trim();
+          setOriginalEmail(loadedEmail);
+          setEmailOtpSentTo(null);
+          setEmailOtpCode('');
+          setEmailVerifiedFor(null);
         }
       } catch (error) {
         console.error('Error fetching profile:', error);
@@ -181,6 +194,17 @@ export default function AlumniProfile() {
     setSaving(true);
     try {
       const token = getToken();
+
+      const currentEmail = (profile.email || '').trim();
+      const emailChanged = currentEmail !== (originalEmail || '').trim();
+      if (emailChanged && emailVerifiedFor !== currentEmail) {
+        toast({
+          title: 'Email change not verified',
+          description: 'Please verify your new email with the OTP before saving.',
+          variant: 'destructive'
+        });
+        return;
+      }
       
       // Update contact info
       const contactResponse = await fetch(`${API_URL}/alumni/profile/${user?.username}`, {
@@ -190,7 +214,8 @@ export default function AlumniProfile() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          email: profile.email,
+          // Email is updated via OTP endpoint (only include if unchanged)
+          email: emailChanged ? originalEmail : currentEmail,
           phone: profile.phone,
           address: profile.address
         })
@@ -226,6 +251,10 @@ export default function AlumniProfile() {
         description: 'Your profile has been saved successfully.' 
       });
 
+      if (emailChanged) {
+        setOriginalEmail(currentEmail);
+      }
+
     } catch (error) {
       console.error('Error saving profile:', error);
       toast({
@@ -235,6 +264,87 @@ export default function AlumniProfile() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const requestEmailOtp = async () => {
+    const newEmail = (profile.email || '').trim();
+    if (!newEmail) {
+      toast({ title: 'Missing email', description: 'Please enter your new email first.', variant: 'destructive' });
+      return;
+    }
+
+    setEmailOtpSending(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_URL}/alumni/profile/${user?.username}/email/request-otp`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ newEmail })
+      });
+
+      const raw = await res.text();
+      const data = (() => {
+        try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+      })();
+      if (!res.ok) {
+        const serverError = (data as any)?.error;
+        const details = serverError || (raw ? raw.slice(0, 200) : '');
+        throw new Error(details ? `Failed to send OTP (${res.status}): ${details}` : `Failed to send OTP (${res.status})`);
+      }
+
+      setEmailOtpSentTo(newEmail);
+      setEmailOtpCode('');
+      setEmailVerifiedFor(null);
+      toast({ title: 'OTP sent', description: 'We sent an OTP to your new email. Enter it below to confirm.' });
+    } catch (e) {
+      toast({ title: 'OTP failed', description: e instanceof Error ? e.message : 'Failed to send OTP', variant: 'destructive' });
+    } finally {
+      setEmailOtpSending(false);
+    }
+  };
+
+  const verifyEmailOtp = async () => {
+    const newEmail = (profile.email || '').trim();
+    const otp = (emailOtpCode || '').trim();
+
+    if (!newEmail || !otp) {
+      toast({ title: 'Missing details', description: 'Please enter the new email and OTP.', variant: 'destructive' });
+      return;
+    }
+
+    setEmailOtpVerifying(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_URL}/alumni/profile/${user?.username}/email/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ newEmail, otp })
+      });
+
+      const raw = await res.text();
+      const data = (() => {
+        try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+      })();
+      if (!res.ok) {
+        const serverError = (data as any)?.error;
+        const details = serverError || (raw ? raw.slice(0, 200) : '');
+        throw new Error(details ? `OTP verification failed (${res.status}): ${details}` : `OTP verification failed (${res.status})`);
+      }
+
+      setEmailVerifiedFor(newEmail);
+      setOriginalEmail(newEmail);
+      toast({ title: 'Email verified', description: 'Your email was updated successfully.' });
+    } catch (e) {
+      toast({ title: 'Invalid OTP', description: e instanceof Error ? e.message : 'OTP verification failed', variant: 'destructive' });
+    } finally {
+      setEmailOtpVerifying(false);
     }
   };
 
@@ -331,9 +441,69 @@ export default function AlumniProfile() {
               type="email"
               className="mt-1.5" 
               value={profile.email} 
-              onChange={e => setProfile({ ...profile, email: e.target.value })}
+              onChange={e => {
+                const next = e.target.value;
+                setProfile({ ...profile, email: next });
+                setEmailOtpCode('');
+                setEmailVerifiedFor(null);
+                setEmailOtpSentTo(null);
+              }}
               placeholder="your@email.com"
             />
+
+            {((profile.email || '').trim() !== (originalEmail || '').trim()) && (
+              <div className="mt-3 space-y-3">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="gap-2"
+                    onClick={requestEmailOtp}
+                    disabled={emailOtpSending || !(profile.email || '').trim()}
+                  >
+                    {emailOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {emailOtpSending ? 'Sending OTP...' : 'Send OTP to new email'}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    className="gap-2"
+                    onClick={verifyEmailOtp}
+                    disabled={emailOtpVerifying || (emailOtpSentTo || '').trim() !== (profile.email || '').trim() || emailOtpCode.trim().length !== 6}
+                  >
+                    {emailOtpVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {emailOtpVerifying ? 'Verifying...' : 'Verify OTP'}
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>OTP (6 digits)</Label>
+                  <InputOTP
+                    maxLength={6}
+                    value={emailOtpCode}
+                    onChange={setEmailOtpCode}
+                    containerClassName="justify-start"
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+
+                  <p className="text-xs text-muted-foreground">
+                    OTP will be sent to <span className="font-medium">{(profile.email || '').trim()}</span>. After verification, your email is updated immediately.
+                  </p>
+
+                  {emailVerifiedFor === (profile.email || '').trim() && (
+                    <p className="text-xs text-success">Email verified.</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <Label htmlFor="phone">Phone</Label>

@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Users, TrendingUp, GraduationCap, Target } from 'lucide-react';
-import { KpiCard } from '@/components/KpiCard';
-import { GlobalFilterBar, FilterState, defaultFilters } from '@/components/GlobalFilterBar';
-import { alumniPerProgram, yearlyEmployment } from '@/data/mockData';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
+import { GlobalFilterBar, FilterState, defaultFilters } from '@/components/GlobalFilterBar';
+import { Users, TrendingUp, GraduationCap, Target } from 'lucide-react';
+import { alumniPerProgram, yearlyEmployment } from '@/data/mockData';
+import { KpiCard } from '@/components/KpiCard';
+import { motion } from 'framer-motion';
+import { useState } from 'react';
 
 export default function AdminAnalytics() {
   const [filters, setFilters] = useState<FilterState>(defaultFilters);

@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Save, CheckCircle2, Loader2, Edit2, Bell, Eye } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ArrowLeft, ArrowRight, Save, CheckCircle2, Loader2, Edit2, Bell } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Slider } from '@/components/ui/slider';
-import { Progress } from '@/components/ui/progress';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Switch } from '@/components/ui/switch';
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 
 // API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -73,6 +73,7 @@ export default function AlumniSurvey() {
   const [notifyOnNewVersion, setNotifyOnNewVersion] = useState(false);
   const [previousSubmission, setPreviousSubmission] = useState<PreviousSubmission | null>(null);
   const [showPreviousDialog, setShowPreviousDialog] = useState(false);
+  const [highlightedQuestionId, setHighlightedQuestionId] = useState<number | null>(null);
   
   const [categories, setCategories] = useState<Category[]>([]);
   const [surveyVersion, setSurveyVersion] = useState<number>(1);
@@ -83,41 +84,69 @@ export default function AlumniSurvey() {
     return localStorage.getItem('token') || sessionStorage.getItem('token');
   };
 
-  // Check if user has already submitted
-  const checkPreviousSubmission = async () => {
+  const getNotifyStorageKey = () => (user?.username ? `survey_notify_${user.username}` : null);
+
+  const updateNotifyPreference = (checked: boolean) => {
+    setNotifyOnNewVersion(checked);
+    const key = getNotifyStorageKey();
+    if (!key) return;
+    if (checked) {
+      localStorage.setItem(key, 'true');
+    } else {
+      localStorage.removeItem(key);
+    }
+  };
+
+  // Determine if the user already submitted the active survey version.
+  // Important: `alumni_records.survey_status` is not version-specific, so we must compare against
+  // the active `survey_version` returned by the survey endpoint.
+  const fetchPreviousSubmissionForVersion = async (activeVersion: number) => {
     if (!user?.username) return;
-    
     try {
       const token = getToken();
-      const response = await fetch(`${API_URL}/alumni/survey/status/${user.username}`, {
+      const submissionsResponse = await fetch(`${API_URL}/alumni/survey/responses/${user.username}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.completed) {
-          setSubmitted(true);
-          // Fetch the previous submission details
-          const submissionsResponse = await fetch(`${API_URL}/alumni/survey/responses/${user.username}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (submissionsResponse.ok) {
-            const submissions = await submissionsResponse.json();
-            if (submissions.length > 0) {
-              setPreviousSubmission(submissions[0]);
-            }
-          }
-        }
+      if (!submissionsResponse.ok) return;
+
+      const submissions = await submissionsResponse.json();
+      if (!Array.isArray(submissions) || submissions.length === 0) {
+        setPreviousSubmission(null);
+        setSubmitted(false);
+        return;
       }
+
+      // Latest submission is returned first due to ORDER BY completed_at DESC in the backend.
+      const latest = submissions[0] as PreviousSubmission;
+      setPreviousSubmission(latest);
+      setSubmitted(Number(latest.survey_version) === Number(activeVersion));
     } catch (error) {
-      console.error('Error checking submission status:', error);
+      console.error('Error fetching previous submission:', error);
+    }
+  };
+
+  const fetchLatestSubmission = async () => {
+    if (!user?.username) return null;
+    try {
+      const token = getToken();
+      const submissionsResponse = await fetch(`${API_URL}/alumni/survey/responses/${user.username}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!submissionsResponse.ok) return null;
+
+      const submissions = await submissionsResponse.json();
+      if (!Array.isArray(submissions) || submissions.length === 0) return null;
+      return submissions[0] as PreviousSubmission;
+    } catch (error) {
+      console.error('Error fetching latest submission:', error);
+      return null;
     }
   };
 
@@ -128,16 +157,7 @@ export default function AlumniSurvey() {
       
       try {
         const token = getToken();
-        
-        // Check if already submitted
-        await checkPreviousSubmission();
-        
-        // If already submitted, we don't need to fetch the survey
-        if (submitted) {
-          setLoading(false);
-          return;
-        }
-        
+
         // First get user's program to determine college
         const profileResponse = await fetch(`${API_URL}/alumni/profile/${user.username}`, {
           headers: {
@@ -158,7 +178,11 @@ export default function AlumniSurvey() {
             if (surveyResponse.ok) {
               const surveyData = await surveyResponse.json();
               setCategories(surveyData.survey || []);
-              setSurveyVersion(surveyData.version || 1);
+              const active = surveyData.version || 1;
+              setSurveyVersion(active);
+
+              // Now that we know the active version, set submitted state accurately.
+              await fetchPreviousSubmissionForVersion(active);
             } else {
               toast({
                 title: 'No Active Survey',
@@ -182,6 +206,12 @@ export default function AlumniSurvey() {
 
     fetchUserCollege();
   }, [user]);
+
+  useEffect(() => {
+    const key = getNotifyStorageKey();
+    if (!key) return;
+    setNotifyOnNewVersion(localStorage.getItem(key) === 'true');
+  }, [user?.username]);
 
   const setAnswer = (qId: string, value: any) => {
     setAnswers(prev => ({ ...prev, [qId]: value }));
@@ -251,11 +281,6 @@ const handleSubmit = async () => {
         }
       }
       
-      // Store notification preference in localStorage
-      if (notifyOnNewVersion) {
-        localStorage.setItem(`survey_notify_${user.username}`, 'true');
-      }
-      
       toast({ 
         title: 'Survey Submitted!', 
         description: 'Thank you for completing the tracer survey.' 
@@ -275,13 +300,7 @@ const handleSubmit = async () => {
   }
 };
 
-  const handleEdit = () => {
-    setEditMode(true);
-    setSubmitted(false);
-    setCurrentSection(0);
-  };
-
-  const loadPreviousAnswers = () => {
+  const loadPreviousAnswers = (focusQuestionId?: number) => {
     if (!previousSubmission) return;
     
     const loadedAnswers: Record<string, any> = {};
@@ -298,12 +317,125 @@ const handleSubmit = async () => {
     setEditMode(true);
     setSubmitted(false);
     setShowPreviousDialog(false);
+
+    if (focusQuestionId) {
+      const sectionIndex = categories.findIndex(section =>
+        section.questions.some(q => q.id === focusQuestionId)
+      );
+      setCurrentSection(sectionIndex >= 0 ? sectionIndex : 0);
+      setHighlightedQuestionId(focusQuestionId);
+      setTimeout(() => setHighlightedQuestionId(null), 2500);
+      toast({
+        title: 'Answer Ready to Edit',
+        description: 'You can now edit the selected answer and re-submit.'
+      });
+      return;
+    }
+
     setCurrentSection(0);
+    setHighlightedQuestionId(null);
     toast({
       title: 'Previous Answers Loaded',
       description: 'You can now edit your previous responses.'
     });
   };
+
+  const openPreviousResponses = async () => {
+    if (previousSubmission) {
+      setShowPreviousDialog(true);
+      return;
+    }
+
+    const latest = await fetchLatestSubmission();
+    if (!latest) {
+      toast({
+        title: 'No previous responses',
+        description: 'You do not have saved survey responses yet.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setPreviousSubmission(latest);
+    setShowPreviousDialog(true);
+  };
+
+  const previousResponsesDialog = (
+    <Dialog open={showPreviousDialog} onOpenChange={setShowPreviousDialog}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display">Your Previous Responses</DialogTitle>
+        </DialogHeader>
+        
+        {previousSubmission ? (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Submitted on: {new Date(previousSubmission.completed_at).toLocaleDateString()} at {new Date(previousSubmission.completed_at).toLocaleTimeString()}
+              <br />
+              Survey Version: {previousSubmission.survey_version}
+            </p>
+            
+            <div className="space-y-4">
+              {categories.map((section, idx) => {
+                const sectionAnswers = previousSubmission.answers.filter(a => 
+                  section.questions.some(q => q.id === a.question_id)
+                );
+                if (sectionAnswers.length === 0) return null;
+                
+                return (
+                  <div key={section.id} className="space-y-2">
+                    <h4 className="font-semibold text-sm text-primary border-b pb-1">
+                      Section {idx + 1}: {section.name}
+                    </h4>
+                    {sectionAnswers.map(ans => {
+                      const question = section.questions.find(q => q.id === ans.question_id);
+                      if (!question) return null;
+                      
+                      let displayAnswer = '';
+                      if (ans.answer_options) {
+                        displayAnswer = ans.answer_options.join(', ');
+                      } else if (ans.answer_number !== undefined && ans.answer_number !== null) {
+                        displayAnswer = String(ans.answer_number);
+                      } else if (ans.answer_text) {
+                        displayAnswer = ans.answer_text;
+                      }
+                      
+                      return (
+                        <div key={ans.question_id} className="flex justify-between py-1 text-sm border-b last:border-0">
+                          <span className="text-muted-foreground pr-4">{question.text}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-right">{displayAnswer}</span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => loadPreviousAnswers(ans.question_id)}
+                            >
+                              Edit
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No previous responses found.</p>
+        )}
+
+        <DialogFooter className="pt-4 gap-2">
+          <Button variant="outline" onClick={() => setShowPreviousDialog(false)}>
+            Close
+          </Button>
+          <Button onClick={() => loadPreviousAnswers()}>
+            <Edit2 className="h-4 w-4 mr-2" /> Edit All in Survey
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   if (loading) {
     return (
@@ -344,7 +476,7 @@ const handleSubmit = async () => {
             <Switch 
               id="notify"
               checked={notifyOnNewVersion}
-              onCheckedChange={setNotifyOnNewVersion}
+              onCheckedChange={updateNotifyPreference}
             />
             <Label htmlFor="notify">Notify me about new survey versions</Label>
           </div>
@@ -356,16 +488,14 @@ const handleSubmit = async () => {
         </div>
 
         <div className="flex gap-3 justify-center">
-          <Button variant="outline" onClick={() => setShowPreviousDialog(true)}>
-            <Eye className="h-4 w-4 mr-2" /> View My Responses
-          </Button>
-          <Button variant="outline" onClick={handleEdit}>
-            <Edit2 className="h-4 w-4 mr-2" /> Edit My Responses
+          <Button variant="outline" onClick={openPreviousResponses}>
+            <Edit2 className="h-4 w-4 mr-2" /> View / Edit My Responses
           </Button>
           <Button onClick={() => window.location.href = '/app/alumni/dashboard'}>
             Go to Dashboard
           </Button>
         </div>
+        {previousResponsesDialog}
       </div>
     );
   }
@@ -417,7 +547,12 @@ const handleSubmit = async () => {
         
         <div className="space-y-6">
           {section.questions.map((q, index) => (
-            <div key={q.id} className="space-y-2">
+            <div
+              key={q.id}
+              className={`space-y-2 rounded-md p-2 transition-colors ${
+                highlightedQuestionId === q.id ? 'bg-primary/10 ring-1 ring-primary/40' : ''
+              }`}
+            >
               <Label className="text-base">
                 {index + 1}. {q.text} 
                 {q.required && <span className="text-destructive ml-1">*</span>}
@@ -611,7 +746,7 @@ const handleSubmit = async () => {
               <Switch 
                 id="notify-review"
                 checked={notifyOnNewVersion}
-                onCheckedChange={setNotifyOnNewVersion}
+                onCheckedChange={updateNotifyPreference}
               />
               <Label htmlFor="notify-review" className="text-xs text-muted-foreground">
                 Send me an email when a new survey version is available
@@ -631,70 +766,7 @@ const handleSubmit = async () => {
         </DialogContent>
       </Dialog>
 
-      {/* Previous Responses Dialog */}
-      <Dialog open={showPreviousDialog} onOpenChange={setShowPreviousDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display">Your Previous Responses</DialogTitle>
-          </DialogHeader>
-          
-          {previousSubmission && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Submitted on: {new Date(previousSubmission.completed_at).toLocaleDateString()} at {new Date(previousSubmission.completed_at).toLocaleTimeString()}
-                <br />
-                Survey Version: {previousSubmission.survey_version}
-              </p>
-              
-              <div className="space-y-4">
-                {categories.map((section, idx) => {
-                  const sectionAnswers = previousSubmission.answers.filter(a => 
-                    section.questions.some(q => q.id === a.question_id)
-                  );
-                  if (sectionAnswers.length === 0) return null;
-                  
-                  return (
-                    <div key={section.id} className="space-y-2">
-                      <h4 className="font-semibold text-sm text-primary border-b pb-1">
-                        Section {idx + 1}: {section.name}
-                      </h4>
-                      {sectionAnswers.map(ans => {
-                        const question = section.questions.find(q => q.id === ans.question_id);
-                        if (!question) return null;
-                        
-                        let displayAnswer = '';
-                        if (ans.answer_options) {
-                          displayAnswer = ans.answer_options.join(', ');
-                        } else if (ans.answer_number !== undefined && ans.answer_number !== null) {
-                          displayAnswer = String(ans.answer_number);
-                        } else if (ans.answer_text) {
-                          displayAnswer = ans.answer_text;
-                        }
-                        
-                        return (
-                          <div key={ans.question_id} className="flex justify-between py-1 text-sm border-b last:border-0">
-                            <span className="text-muted-foreground pr-4">{question.text}</span>
-                            <span className="font-medium text-right">{displayAnswer}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="pt-4 gap-2">
-            <Button variant="outline" onClick={() => setShowPreviousDialog(false)}>
-              Close
-            </Button>
-            <Button onClick={loadPreviousAnswers}>
-              <Edit2 className="h-4 w-4 mr-2" /> Edit These Responses
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {previousResponsesDialog}
     </div>
   );
 }

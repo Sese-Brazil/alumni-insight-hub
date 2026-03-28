@@ -5,7 +5,7 @@ interface User {
   id: number;
   username: string;
   email: string;
-  role: 'admin' | 'alumni';
+  role: 'superadmin' | 'admin' | 'alumni';
   firstName: string;
   lastName: string;
   middleName?: string;

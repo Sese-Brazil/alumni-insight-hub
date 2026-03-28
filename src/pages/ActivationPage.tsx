@@ -1,12 +1,12 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import { GraduationCap, Loader2, CheckCircle2, ArrowLeft, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
+import { useState, type ClipboardEvent } from 'react';
 
 const STEPS = ['Identity', 'Verification', 'Credentials', 'OTP Sent', 'Confirm OTP'];
 
@@ -20,7 +20,8 @@ export default function ActivationPage() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [studentId, setStudentId] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [verifyStatus, setVerifyStatus] = useState<'idle' | 'found' | 'not_found' | 'already'>('idle');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,7 +29,9 @@ export default function ActivationPage() {
   const [showPw, setShowPw] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [verificationCode, setVerificationCode] = useState(''); // Store the generated OTP
+  const [verificationCode, setVerificationCode] = useState('');
+  const [emailSuggestion, setEmailSuggestion] = useState('');
+  const [preferredEmailDomain, setPreferredEmailDomain] = useState<'plpasig.edu.ph' | 'gmail.com'>('gmail.com');
 
   const progress = ((step + 1) / STEPS.length) * 100;
 
@@ -50,7 +53,8 @@ const handleVerify = async () => {
       },
       body: JSON.stringify({ 
         studentId, 
-        fullName 
+        firstName,
+        lastName
       }),
     });
 
@@ -60,7 +64,9 @@ const handleVerify = async () => {
       setVerifyStatus('found');
       // Auto-fill the name from the record if needed
       if (data.record) {
-        setFullName(data.record.fullName);
+        setFirstName(data.record.firstName);
+        setLastName(data.record.lastName);
+        setPreferredEmailDomain(data.record.preferredEmailDomain === 'plpasig.edu.ph' ? 'plpasig.edu.ph' : 'gmail.com');
       }
       toast({
         title: 'Record Found',
@@ -94,7 +100,6 @@ const handleVerify = async () => {
   }
 };
 
-
   // Step 2: Send OTP to email
   const handleSendOtp = async () => {
     setLoading(true);
@@ -102,7 +107,8 @@ const handleVerify = async () => {
       // Generate a random 6-digit OTP (in real app, this should be done on backend)
       const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
       setVerificationCode(generatedOtp);
-      
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
       // Send OTP via email (you'll need to implement this on your backend)
       const response = await fetch(`${API_URL}/auth/send-otp`, {
         method: 'POST',
@@ -117,8 +123,8 @@ const handleVerify = async () => {
       });
 
       const data = await response.json();
-
       if (response.ok) {
+        setEmailSuggestion('');
         setStep(3);
         startCooldown();
         toast({
@@ -126,9 +132,10 @@ const handleVerify = async () => {
           description: `Verification code sent to ${maskedEmail}`,
         });
       } else {
+        setEmailSuggestion(data.suggestion || '');
         toast({
           title: 'Failed to Send OTP',
-          description: data.error || 'Please try again later',
+          description: data.suggestion ? `${data.error} Use ${data.suggestion}.` : (data.error || 'Please try again later'),
           variant: 'destructive'
         });
       }
@@ -172,7 +179,8 @@ const handleVerify = async () => {
           },
           body: JSON.stringify({
             studentId,
-            fullName,
+            firstName,
+            lastName,
             email,
             password
           }),
@@ -181,6 +189,7 @@ const handleVerify = async () => {
         const registerData = await registerResponse.json();
 
         if (registerResponse.ok && registerData.success) {
+          setEmailSuggestion('');
           setStep(4);
           toast({
             title: 'Account Activated!',
@@ -192,9 +201,10 @@ const handleVerify = async () => {
           setConfirmPassword('');
           setOtp(['', '', '', '', '', '']);
         } else {
+          setEmailSuggestion(registerData.suggestion || '');
           toast({
             title: 'Registration Failed',
-            description: registerData.error || 'Unable to create account',
+            description: registerData.suggestion ? `${registerData.error} Use ${registerData.suggestion}.` : (registerData.error || 'Unable to create account'),
             variant: 'destructive'
           });
         }
@@ -273,7 +283,39 @@ const handleVerify = async () => {
     }
   };
 
+  const handleOtpPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pasted) return;
+
+    e.preventDefault();
+    const nextOtp = ['', '', '', '', '', ''];
+    for (let i = 0; i < pasted.length; i += 1) {
+      nextOtp[i] = pasted[i];
+    }
+    setOtp(nextOtp);
+
+    const focusIndex = Math.min(pasted.length, 5);
+    const next = document.getElementById(`otp-${focusIndex}`);
+    next?.focus();
+  };
+
+  const applyEmailSuggestion = () => {
+    if (!emailSuggestion) return;
+    setEmail(emailSuggestion);
+    setEmailSuggestion('');
+  };
+
+  const applyPreferredDomain = () => {
+    const current = email.trim();
+    if (!current) return;
+    const localPart = current.includes('@') ? current.split('@')[0] : current;
+    if (!localPart) return;
+    setEmail(`${localPart}@${preferredEmailDomain}`);
+  };
+
   const maskedEmail = email ? email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '';
+  const isValidEmail = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
+  const emailPlaceholder = preferredEmailDomain === 'plpasig.edu.ph' ? 'Juan@plpasig.edu.ph' : 'Juan@gmail.com';
 
   const stepContent = () => {
     switch (step) {
@@ -291,12 +333,22 @@ const handleVerify = async () => {
               />
             </div>
             <div>
-              <Label htmlFor="fullName">Full Name</Label>
+              <Label htmlFor="firstName">First Name</Label>
               <Input 
-                id="fullName"
-                placeholder="Juan Dela Cruz" 
-                value={fullName} 
-                onChange={e => setFullName(e.target.value)} 
+                id="firstName"
+                placeholder="Juan" 
+                value={firstName} 
+                onChange={e => setFirstName(e.target.value)} 
+                className="mt-1.5" 
+              />
+            </div>
+            <div>
+              <Label htmlFor="firstName">Last Name</Label>
+              <Input 
+                id="lastName"
+                placeholder="Dela Cruz" 
+                value={lastName} 
+                onChange={e => setLastName(e.target.value)} 
                 className="mt-1.5" 
               />
             </div>
@@ -304,7 +356,7 @@ const handleVerify = async () => {
               <Button variant="outline" onClick={() => navigate('/login')}>Cancel</Button>
               <Button 
                 className="flex-1" 
-                disabled={!studentId || !fullName} 
+                disabled={!studentId || !firstName || !lastName} 
                 onClick={() => { 
                   setStep(1); 
                   handleVerify(); 
@@ -330,7 +382,7 @@ const handleVerify = async () => {
               <div className="text-center py-6">
                 <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-3" />
                 <p className="font-semibold text-lg">Alumni Record Found!</p>
-                <p className="text-muted-foreground text-sm mt-1">Welcome, {fullName}. Proceed to set up your account.</p>
+                <p className="text-muted-foreground text-sm mt-1">Welcome, {firstName} {lastName}. Proceed to set up your account.</p>
                 <Button className="mt-6 w-full" onClick={() => setStep(2)}>
                   Continue <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
@@ -377,11 +429,54 @@ const handleVerify = async () => {
               <Input 
                 id="email"
                 type="email" 
-                placeholder="your@email.com" 
+                placeholder={emailPlaceholder}
                 value={email} 
-                onChange={e => setEmail(e.target.value)} 
+                onChange={e => {
+                  setEmail(e.target.value);
+                  if (emailSuggestion) setEmailSuggestion('');
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Tab' && emailSuggestion) {
+                    e.preventDefault();
+                    applyEmailSuggestion();
+                  }
+                }}
                 className="mt-1.5" 
               />
+              <div className="mt-2 rounded-md border bg-muted/40 px-3 py-2">
+                <p className="text-xs font-medium text-foreground">
+                  {preferredEmailDomain === 'plpasig.edu.ph'
+                    ? 'School record found!:    '
+                    : 'No school email record'}
+                  <button
+                  type="button"
+                  onClick={applyPreferredDomain}
+                  className="mt-2 inline-flex text-xs font-semibold text-primary underline underline-offset-2 hover:opacity-80"
+                >
+                   Use @{preferredEmailDomain}
+                </button>
+                </p>
+                
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {preferredEmailDomain === 'plpasig.edu.ph'
+                    ? 'Click the use button to use the school domain for faster verification.'
+                    : 'Click the use button to use the personal Gmail address for activation.'}
+                </p>
+                
+              </div>
+              {emailSuggestion && (
+                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-sm">
+                  Did you mean{' '}
+                  <button
+                    type="button"
+                    onClick={applyEmailSuggestion}
+                    className="font-semibold text-amber-950 underline underline-offset-2 transition-colors hover:text-amber-700"
+                  >
+                    {emailSuggestion}
+                  </button>
+                  ? Press `Tab` or click to apply.
+                </div>
+              )}
             </div>
             
             <div>
@@ -440,7 +535,8 @@ const handleVerify = async () => {
               </Button>
               <Button 
                 className="flex-1" 
-                disabled={!email || !password || password !== confirmPassword || password.length < 4} 
+                disabled={!isValidEmail || !password || password !== confirmPassword || password.length < 4} 
+
                 onClick={handleSendOtp}
               >
                 {loading ? (
@@ -473,6 +569,7 @@ const handleVerify = async () => {
                   maxLength={1}
                   value={d}
                   onChange={e => handleOtpChange(i, e.target.value)}
+                  onPaste={handleOtpPaste}
                   className="w-12 h-12 text-center text-lg font-bold"
                   disabled={loading}
                 />

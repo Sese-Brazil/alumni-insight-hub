@@ -134,6 +134,16 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
+const inferVariant = (props: Toast): ToastProps["variant"] => {
+  if (props.variant) return props.variant;
+  const text = `${String(props.title || "")} ${String(props.description || "")}`.toLowerCase();
+
+  if (text.match(/\berror\b|\bfailed\b|\bfail\b|\binvalid\b|\bdenied\b/)) return "error";
+  if (text.match(/\bwarning\b|\bwarn\b|\bmissing\b|\brequired\b/)) return "warning";
+  if (text.match(/\bsuccess\b|\bsaved\b|\bupdated\b|\bsubmitted\b|\bcompleted\b|\blogged out\b/)) return "success";
+  return "info";
+};
+
 function toast({ ...props }: Toast) {
   const id = genId();
 
@@ -148,6 +158,7 @@ function toast({ ...props }: Toast) {
     type: "ADD_TOAST",
     toast: {
       ...props,
+      variant: inferVariant(props),
       id,
       open: true,
       onOpenChange: (open) => {

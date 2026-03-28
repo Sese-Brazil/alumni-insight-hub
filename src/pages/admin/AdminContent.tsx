@@ -1,32 +1,34 @@
-import { useState } from 'react';
-import { Save, Edit2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { Save } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { loadContentSettings, saveContentSettings } from '@/lib/contentSettings';
 
 export default function AdminContent() {
   const { toast } = useToast();
-  const [overviewContent, setOverviewContent] = useState({
-    welcome: 'Welcome to the Alumni Employability Tracer System',
-    purpose: 'This system is designed to track, analyze, and predict the employability outcomes of university alumni. By collecting comprehensive data through tracer surveys, we generate actionable insights that help improve educational programs and career readiness.',
-    importance: 'Your participation helps the university understand how well our programs prepare graduates for the workforce, identify areas of improvement, and provide data-driven career guidance to future alumni.',
-  });
+  const [overviewContent, setOverviewContent] = useState(loadContentSettings().overview);
 
-  const [helpContent, setHelpContent] = useState({
-    howItWorks: 'The tracer system collects employment data from alumni through structured surveys. This data is analyzed using statistical models and machine learning algorithms to identify trends and predict future outcomes.',
-    privacy: 'All data is collected and processed in compliance with the Data Privacy Act of 2012. Personal information is anonymized in analytics and never shared with third parties.',
-  });
+  const [helpContent, setHelpContent] = useState(loadContentSettings().help);
 
-  const [faqs, setFaqs] = useState([
-    { q: 'How often should I update my survey?', a: 'We recommend updating your information whenever your employment status changes.' },
-    { q: 'Can I view other alumni data?', a: 'No, individual data is confidential. Only aggregated and anonymized statistics are available.' },
-    { q: 'How are job recommendations generated?', a: 'Recommendations are based on your skills assessment, degree, and employment history using machine learning models.' },
-  ]);
+  const [faqs, setFaqs] = useState(loadContentSettings().faqs);
+
+  useEffect(() => {
+    const current = loadContentSettings();
+    setOverviewContent(current.overview);
+    setHelpContent(current.help);
+    setFaqs(current.faqs);
+  }, []);
 
   const handleSave = () => {
+    saveContentSettings({
+      overview: overviewContent,
+      help: helpContent,
+      faqs: faqs.filter(f => f.q.trim() || f.a.trim())
+    });
     toast({ title: 'Content Saved', description: 'All changes have been saved successfully.' });
   };
 

@@ -1,13 +1,13 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { GraduationCap, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { motion } from 'framer-motion';
+import { useState } from 'react';
 
 export default function LoginPage() {
   const [userId, setUserId] = useState('');
@@ -39,12 +39,19 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 gradient-hero items-center justify-center p-12">
-        <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} className="text-primary-foreground max-w-md">
-          <div className="p-3 rounded-2xl bg-primary-foreground/10 inline-block mb-8">
+        <motion.div
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8 }}
+          className="max-w-md text-white"
+        >
+          <div className="p-3 rounded-2xl bg-white/10 inline-block mb-8">
             <GraduationCap className="h-10 w-10" />
           </div>
           <h1 className="text-4xl font-display font-extrabold mb-4">Alumni Employability Tracer</h1>
-          <p className="text-primary-foreground/70 text-lg leading-relaxed">Track employment outcomes, predict career trends, and empower alumni with data-driven insights.</p>
+          <p className="text-white/80 text-lg leading-relaxed">
+            Track employment outcomes, predict career trends, and empower alumni with data-driven insights.
+          </p>
         </motion.div>
       </div>
 

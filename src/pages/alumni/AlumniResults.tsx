@@ -1,11 +1,11 @@
-import { motion } from 'framer-motion';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
 import { AlertTriangle, Star, Briefcase, TrendingUp } from 'lucide-react';
 import { skillsData, jobRecommendations } from '@/data/mockData';
-import { useAuth } from '@/contexts/AuthContext';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
 import { Progress } from '@/components/ui/progress';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 
 export default function AlumniResults() {
   const { user } = useAuth();

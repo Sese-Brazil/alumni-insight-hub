@@ -1,19 +1,17 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Search, Upload, Eye, FileSpreadsheet, CheckCircle2, AlertCircle, 
-  Loader2, Clock, Download, FileText, Users, Building2, GraduationCap 
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Search, Upload, Eye, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, Clock, Download, FileText, Users, Building2, GraduationCap } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { StatusBadge } from '@/components/StatusBadge';
-import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { format } from 'date-fns';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect } from 'react';
+import { format } from 'date-fns';
+import { isAdminLike } from '@/lib/roles';
 
 // API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -89,6 +87,11 @@ export default function AdminUsers() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedImport, setSelectedImport] = useState<ImportHistory | null>(null);
   const [showImportDetails, setShowImportDetails] = useState(false);
+  const [sortKey, setSortKey] = useState<'name' | 'status' | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [statusQuickFilter, setStatusQuickFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   
   const { toast } = useToast();
 
@@ -104,7 +107,7 @@ export default function AdminUsers() {
       return;
     }
     
-    if (user?.role !== 'admin') {
+    if (!isAdminLike(user?.role)) {
       toast({
         title: 'Access Denied',
         description: 'Admin privileges required',
@@ -262,7 +265,7 @@ export default function AdminUsers() {
 
   // Load data on mount
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'admin') {
+    if (isAuthenticated && isAdminLike(user?.role)) {
       fetchColleges();
       fetchBatchYears();
       fetchImportHistory();
@@ -271,7 +274,7 @@ export default function AdminUsers() {
 
   // Fetch programs when college filter changes
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'admin') {
+    if (isAuthenticated && isAdminLike(user?.role)) {
       fetchPrograms();
       // Reset program filter when college changes
       if (collegeFilter !== 'all') {
@@ -282,9 +285,10 @@ export default function AdminUsers() {
 
   // Refetch when filters change - with debounce to prevent too many requests
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'admin') {
+    if (isAuthenticated && isAdminLike(user?.role)) {
       const timer = setTimeout(() => {
         fetchAlumniRecords();
+        setCurrentPage(1);
       }, 500); // Debounce for 500ms
       
       return () => clearTimeout(timer);
@@ -473,7 +477,51 @@ export default function AdminUsers() {
     return college ? college.name : 'Unknown';
   };
 
-  if (!isAuthenticated || user?.role !== 'admin') {
+  const sortedRecords = (() => {
+    const records = statusQuickFilter === 'all'
+      ? [...alumniRecords]
+      : alumniRecords.filter(r => r.status === statusQuickFilter);
+    if (!sortKey) return records;
+
+    if (sortKey === 'name') {
+      records.sort((a, b) => {
+        const res = a.name.localeCompare(b.name);
+        return sortDirection === 'asc' ? res : -res;
+      });
+    }
+
+    if (sortKey === 'status') {
+      const orderAsc: Record<string, number> = {
+        active: 0,
+        inactive: 1,
+        graduated: 2
+      };
+      const orderDesc: Record<string, number> = {
+        inactive: 0,
+        active: 1,
+        graduated: 2
+      };
+      const order = sortDirection === 'asc' ? orderAsc : orderDesc;
+      records.sort((a, b) => {
+        const av = order[a.status] ?? 99;
+        const bv = order[b.status] ?? 99;
+        if (av !== bv) return av - bv;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return records;
+  })();
+
+  const totalPages = Math.max(1, Math.ceil(sortedRecords.length / pageSize));
+  const pagedRecords = sortedRecords.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const goToPage = (page: number) => {
+    const next = Math.min(Math.max(page, 1), totalPages);
+    setCurrentPage(next);
+  };
+
+  if (!isAuthenticated || !isAdminLike(user?.role)) {
     return null;
   }
 
@@ -572,7 +620,7 @@ export default function AdminUsers() {
         </div>
 
         {/* Active Filters Display */}
-        {(collegeFilter !== 'all' || programFilter !== 'all' || batchFilter !== 'all') && (
+        {(collegeFilter !== 'all' || programFilter !== 'all' || batchFilter !== 'all' || statusQuickFilter !== 'all') && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
             <span className="text-muted-foreground">Active filters:</span>
             {collegeFilter !== 'all' && (
@@ -592,13 +640,27 @@ export default function AdminUsers() {
                 Batch {batchFilter}
               </Badge>
             )}
+            {statusQuickFilter !== 'all' && (
+              <Badge variant="outline" className="bg-primary/5">
+                Status: {capitalizeStatus(statusQuickFilter)}
+              </Badge>
+            )}
           </div>
         )}
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-card p-4">
+        <button
+          type="button"
+          className="glass-card p-4 text-left hover:bg-muted/40 transition-colors"
+          onClick={() => {
+            setSortKey('name');
+            setSortDirection('asc');
+            setStatusQuickFilter('all');
+            setCurrentPage(1);
+          }}
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-primary/10">
               <Users className="h-5 w-5 text-primary" />
@@ -608,8 +670,17 @@ export default function AdminUsers() {
               <p className="text-xs text-muted-foreground">Total Records</p>
             </div>
           </div>
-        </div>
-        <div className="glass-card p-4">
+        </button>
+        <button
+          type="button"
+          className="glass-card p-4 text-left hover:bg-muted/40 transition-colors"
+          onClick={() => {
+            setSortKey('status');
+            setSortDirection('asc'); // active on top
+            setStatusQuickFilter('active'); // show active only
+            setCurrentPage(1);
+          }}
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-success/10">
               <CheckCircle2 className="h-5 w-5 text-success" />
@@ -621,8 +692,17 @@ export default function AdminUsers() {
               <p className="text-xs text-muted-foreground">Active Accounts</p>
             </div>
           </div>
-        </div>
-        <div className="glass-card p-4">
+        </button>
+        <button
+          type="button"
+          className="glass-card p-4 text-left hover:bg-muted/40 transition-colors"
+          onClick={() => {
+            setSortKey('status');
+            setSortDirection('desc'); // inactive on top
+            setStatusQuickFilter('inactive');
+            setCurrentPage(1);
+          }}
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-warning/10">
               <AlertCircle className="h-5 w-5 text-warning" />
@@ -634,7 +714,7 @@ export default function AdminUsers() {
               <p className="text-xs text-muted-foreground">Inactive Records</p>
             </div>
           </div>
-        </div>
+        </button>
         <div className="glass-card p-4">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-info/10">
@@ -674,15 +754,18 @@ export default function AdminUsers() {
                     <p className="text-sm text-muted-foreground mt-2">Loading alumni records...</p>
                   </TableCell>
                 </TableRow>
-              ) : alumniRecords.length === 0 ? (
+              ) : pagedRecords.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-8">
                     <p className="text-muted-foreground">No alumni records found</p>
                   </TableCell>
                 </TableRow>
               ) : (
-                alumniRecords.map(a => (
-                  <TableRow key={a.id}>
+                pagedRecords.map(a => (
+                  <TableRow
+                    key={a.id}
+                    className="transition-colors hover:bg-muted/50 dark:hover:bg-white/10"
+                  >
                     <TableCell className="font-mono text-sm">{a.student_id}</TableCell>
                     <TableCell className="font-medium">{a.name}</TableCell>
                     <TableCell className="text-sm">{a.college}</TableCell>
@@ -702,6 +785,42 @@ export default function AdminUsers() {
           </Table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {sortedRecords.length > 0 && (
+        <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+          <div>
+            Showing{' '}
+            <span className="font-medium">
+              {(currentPage - 1) * pageSize + 1}-
+              {Math.min(currentPage * pageSize, sortedRecords.length)}
+            </span>{' '}
+            of <span className="font-medium">{sortedRecords.length}</span> records
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === 1}
+              onClick={() => goToPage(currentPage - 1)}
+            >
+              Previous
+            </Button>
+            <span>
+              Page <span className="font-medium">{currentPage}</span> of{' '}
+              <span className="font-medium">{totalPages}</span>
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === totalPages}
+              onClick={() => goToPage(currentPage + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Profile view modal */}
       <Dialog open={!!selectedAlumni} onOpenChange={() => setSelectedAlumni(null)}>

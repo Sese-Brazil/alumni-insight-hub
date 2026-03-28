@@ -1,21 +1,19 @@
-import { useState, useEffect } from 'react';
-import { 
-  Plus, Edit2, Trash2, GripVertical, Save, X, ListPlus, Loader2, 
-  Building2, Eye, Upload, Download, Copy, CheckCircle2, AlertCircle, GraduationCap
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
+import { Plus, Edit2, Trash2, GripVertical, Save, X, ListPlus, Loader2, Building2, Eye, Upload, Download, Copy, CheckCircle2, AlertCircle, GraduationCap} from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect } from 'react';
+import { isAdminLike } from '@/lib/roles';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -112,7 +110,6 @@ const QuestionBadges = ({ question, colleges, programs }: { question: Question; 
 export default function AdminSurveyManager() {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
-  
   const [categories, setCategories] = useState<Category[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -131,6 +128,7 @@ export default function AdminSurveyManager() {
   const [publishedSurveys, setPublishedSurveys] = useState<PublishedSurvey[]>([]);
   const [loadingPublished, setLoadingPublished] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<{ id: number; name: string } | null>(null);
   const [publishType, setPublishType] = useState<'college' | 'program'>('college');
   const [publishTarget, setPublishTarget] = useState<string>('');
   const [publishing, setPublishing] = useState(false);
@@ -160,7 +158,7 @@ export default function AdminSurveyManager() {
   const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
 
   useEffect(() => {
-    if (!isAuthenticated || user?.role !== 'admin') window.location.href = '/login';
+    if (!isAuthenticated || !isAdminLike(user?.role)) window.location.href = '/login';
   }, [isAuthenticated, user]);
 
   const fetchData = async (url: string, setter: Function, errorMsg: string) => {
@@ -240,7 +238,7 @@ export default function AdminSurveyManager() {
   };
 
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'admin') {
+    if (isAuthenticated && isAdminLike(user?.role)) {
       fetchColleges();
       fetchPrograms();
       fetchVersions();
@@ -249,7 +247,7 @@ export default function AdminSurveyManager() {
   }, [isAuthenticated, user]);
 
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'admin') {
+    if (isAuthenticated && isAdminLike(user?.role)) {
       fetchSurveyData();
     }
   }, [isAuthenticated, user, activeVersion, selectedCollege, selectedProgram]);
@@ -545,6 +543,34 @@ export default function AdminSurveyManager() {
     }
   };
 
+  const handleDeleteCategory = async (categoryId: number, categoryName: string) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/survey/category/${categoryId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+
+      if (res.ok) {
+        setCategories(prev =>
+          prev
+            .filter(c => c.id !== categoryId)
+            .map((c, index) => ({ ...c, order_index: index }))
+        );
+        toast({ title: 'Category Deleted', description: `"${categoryName}" was removed.` });
+      } else {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to delete category');
+      }
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete category',
+        variant: 'destructive'
+      });
+    }
+  };
+
   const handleAddQuestion = async () => {
     if (!newQ.text?.trim() || !newQ.category_id) {
       toast({ title: "Missing Information", description: "Please provide all fields.", variant: "destructive" });
@@ -824,6 +850,19 @@ export default function AdminSurveyManager() {
                   <div className="flex items-center gap-3">
                     <span className="font-display font-semibold">{cat.name}</span>
                     <span className="text-xs bg-muted px-2 py-0.5 rounded-full">{cat.questions.length} questions</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive hover:text-destructive"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDeleteCategoryTarget({ id: cat.id, name: cat.name });
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="px-6 pb-4">
@@ -1195,6 +1234,36 @@ export default function AdminSurveyManager() {
             <Button onClick={handlePublishSurvey} disabled={!publishTarget || publishing}>
               {publishing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {publishing ? 'Publishing...' : 'Publish Survey'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteCategoryTarget} onOpenChange={() => setDeleteCategoryTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Category</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Delete category{' '}
+            <span className="font-semibold text-foreground">
+              "{deleteCategoryTarget?.name}"
+            </span>{' '}
+            and all its questions? This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteCategoryTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!deleteCategoryTarget) return;
+                handleDeleteCategory(deleteCategoryTarget.id, deleteCategoryTarget.name);
+                setDeleteCategoryTarget(null);
+              }}
+            >
+              Delete Category
             </Button>
           </DialogFooter>
         </DialogContent>
